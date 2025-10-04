@@ -20,6 +20,15 @@ interface Dragon {
   image: string;
 }
 
+interface BattleDragon extends Dragon {
+  currentHp: number;
+}
+
+interface BattleLog {
+  message: string;
+  type: 'attack' | 'win' | 'info';
+}
+
 const DRAGONS_POOL: Omit<Dragon, 'id'>[] = [
   { name: 'Огненный Властелин', element: 'fire', rarity: 'legendary', power: 95, hp: 85, speed: 12, image: '/img/297e1d8b-1330-4b82-842b-006642877feb.jpg' },
   { name: 'Ледяной Страж', element: 'ice', rarity: 'epic', power: 75, hp: 90, speed: 8, image: '/img/4de6531c-8d1c-4b3c-9db7-8d0ad61e00f5.jpg' },
@@ -54,12 +63,29 @@ const RARITY_COLORS: Record<DragonRarity, string> = {
   common: 'from-gray-400 to-slate-500'
 };
 
+const ELEMENT_ADVANTAGES: Record<DragonElement, DragonElement[]> = {
+  fire: ['ice', 'wind'],
+  ice: ['earth', 'shadow'],
+  shadow: ['light', 'wind'],
+  light: ['shadow', 'earth'],
+  earth: ['fire', 'wind'],
+  wind: ['fire', 'light']
+};
+
 const Index = () => {
   const [crystals, setCrystals] = useState(500);
   const [premiumCrystals, setPremiumCrystals] = useState(100);
   const [collection, setCollection] = useState<Dragon[]>([]);
   const [isRevealing, setIsRevealing] = useState(false);
   const [lastSummon, setLastSummon] = useState<Dragon | null>(null);
+  const [playerRating, setPlayerRating] = useState(1000);
+  const [wins, setWins] = useState(0);
+  const [losses, setLosses] = useState(0);
+  const [selectedDragon, setSelectedDragon] = useState<Dragon | null>(null);
+  const [enemyDragon, setEnemyDragon] = useState<BattleDragon | null>(null);
+  const [playerBattleDragon, setPlayerBattleDragon] = useState<BattleDragon | null>(null);
+  const [isBattling, setIsBattling] = useState(false);
+  const [battleLogs, setBattleLogs] = useState<BattleLog[]>([]);
 
   const getRarityByChance = (): DragonRarity => {
     const rand = Math.random() * 100;
@@ -119,6 +145,111 @@ const Index = () => {
     return map[element];
   };
 
+  const hasElementAdvantage = (attacker: DragonElement, defender: DragonElement): boolean => {
+    return ELEMENT_ADVANTAGES[attacker].includes(defender);
+  };
+
+  const calculateDamage = (attacker: BattleDragon, defender: BattleDragon): number => {
+    let damage = attacker.power;
+    if (hasElementAdvantage(attacker.element, defender.element)) {
+      damage = Math.floor(damage * 1.5);
+    }
+    const variation = Math.floor(Math.random() * 10) - 5;
+    return Math.max(damage + variation, 10);
+  };
+
+  const generateEnemyDragon = (): BattleDragon => {
+    const template = DRAGONS_POOL[Math.floor(Math.random() * DRAGONS_POOL.length)];
+    return {
+      ...template,
+      id: 'enemy-' + Date.now(),
+      currentHp: template.hp
+    };
+  };
+
+  const startBattle = (dragon: Dragon) => {
+    setSelectedDragon(dragon);
+    const enemy = generateEnemyDragon();
+    setEnemyDragon(enemy);
+    setPlayerBattleDragon({ ...dragon, currentHp: dragon.hp });
+    setBattleLogs([{ message: `Бой начался! ${dragon.name} против ${enemy.name}!`, type: 'info' }]);
+  };
+
+  const executeBattle = () => {
+    if (!playerBattleDragon || !enemyDragon) return;
+
+    setIsBattling(true);
+    const logs: BattleLog[] = [...battleLogs];
+
+    const playerDragon = { ...playerBattleDragon };
+    const opponentDragon = { ...enemyDragon };
+
+    const attackOrder = playerDragon.speed >= opponentDragon.speed 
+      ? [playerDragon, opponentDragon] 
+      : [opponentDragon, playerDragon];
+
+    const simulateTurn = (turnCount: number) => {
+      if (turnCount > 20 || playerDragon.currentHp <= 0 || opponentDragon.currentHp <= 0) {
+        if (playerDragon.currentHp > opponentDragon.currentHp) {
+          logs.push({ message: `🏆 Победа! ${playerDragon.name} одержал победу!`, type: 'win' });
+          setWins(w => w + 1);
+          setPlayerRating(r => r + 25);
+          setCrystals(c => c + 100);
+          toast.success('Победа! +25 рейтинга, +100 кристаллов!');
+        } else {
+          logs.push({ message: `💀 Поражение! ${opponentDragon.name} победил!`, type: 'win' });
+          setLosses(l => l + 1);
+          setPlayerRating(r => Math.max(0, r - 15));
+          toast.error('Поражение! -15 рейтинга');
+        }
+        setBattleLogs(logs);
+        setIsBattling(false);
+        setPlayerBattleDragon(playerDragon);
+        setEnemyDragon(opponentDragon);
+        return;
+      }
+
+      setTimeout(() => {
+        const attacker = attackOrder[turnCount % 2];
+        const defender = attackOrder[(turnCount + 1) % 2];
+        const isPlayerAttacking = attacker === playerDragon;
+
+        const damage = calculateDamage(attacker, defender);
+        const hasAdvantage = hasElementAdvantage(attacker.element, defender.element);
+        
+        if (isPlayerAttacking) {
+          opponentDragon.currentHp -= damage;
+          logs.push({
+            message: `⚔️ ${attacker.name} атакует! Урон: ${damage} HP${hasAdvantage ? ' (Преимущество стихии!)' : ''}`,
+            type: 'attack'
+          });
+        } else {
+          playerDragon.currentHp -= damage;
+          logs.push({
+            message: `🔥 ${attacker.name} наносит ответный удар! Урон: ${damage} HP${hasAdvantage ? ' (Преимущество стихии!)' : ''}`,
+            type: 'attack'
+          });
+        }
+
+        setBattleLogs([...logs]);
+        setPlayerBattleDragon({ ...playerDragon });
+        setEnemyDragon({ ...opponentDragon });
+
+        simulateTurn(turnCount + 1);
+      }, 1500);
+    };
+
+    simulateTurn(0);
+  };
+
+  const resetBattle = () => {
+    setSelectedDragon(null);
+    setEnemyDragon(null);
+    setPlayerBattleDragon(null);
+    setBattleLogs([]);
+    setIsBattling(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900">
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiM5MzMzZWEiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRjMC0yIDItNCA0LTRoNHYtNGgtNGMtMiAwLTQtMi00LTR2LTRoLTR2NGMwIDItMiA0LTQgNGgtNHY0aDRjMiAwIDQgMiA0IDR2NGg0di00eiIvPjwvZz48L2c+PC9zdmc+')] opacity-20"></div>
@@ -149,7 +280,7 @@ const Index = () => {
         </header>
 
         <Tabs defaultValue="summon" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8 bg-slate-800/50 backdrop-blur-sm">
+          <TabsList className="grid w-full grid-cols-4 mb-8 bg-slate-800/50 backdrop-blur-sm">
             <TabsTrigger value="summon" className="data-[state=active]:bg-purple-600">
               <Icon name="Sparkles" size={18} className="mr-2" />
               Призыв
@@ -157,6 +288,10 @@ const Index = () => {
             <TabsTrigger value="collection" className="data-[state=active]:bg-purple-600">
               <Icon name="Library" size={18} className="mr-2" />
               Коллекция
+            </TabsTrigger>
+            <TabsTrigger value="arena" className="data-[state=active]:bg-purple-600">
+              <Icon name="Swords" size={18} className="mr-2" />
+              Арена
             </TabsTrigger>
             <TabsTrigger value="shop" className="data-[state=active]:bg-purple-600">
               <Icon name="ShoppingBag" size={18} className="mr-2" />
@@ -364,6 +499,431 @@ const Index = () => {
                 </div>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="arena">
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold mb-4 text-white">Арена Драконов</h2>
+              <div className="flex justify-center gap-8 text-white">
+                <div>
+                  <p className="text-sm text-purple-300">Рейтинг</p>
+                  <p className="text-2xl font-bold text-amber-400">{playerRating}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-purple-300">Побед</p>
+                  <p className="text-2xl font-bold text-green-400">{wins}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-purple-300">Поражений</p>
+                  <p className="text-2xl font-bold text-red-400">{losses}</p>
+                </div>
+              </div>
+            </div>
+
+            {!selectedDragon ? (
+              <>
+                <p className="text-center text-purple-200 mb-6">Выбери дракона для битвы</p>
+                {collection.length === 0 ? (
+                  <div className="text-center py-20">
+                    <Icon name="Frown" size={64} className="mx-auto mb-4 text-purple-400 opacity-50" />
+                    <p className="text-xl text-purple-300">Нет драконов для боя</p>
+                    <p className="text-purple-400 mt-2">Сначала призови драконов!</p>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {collection.map((dragon) => (
+                      <Card 
+                        key={dragon.id}
+                        className="p-4 bg-gradient-to-br from-slate-800/90 to-purple-900/90 backdrop-blur-sm border-2 border-purple-500/50 hover:border-purple-400 transition-all hover:scale-105 cursor-pointer"
+                        onClick={() => startBattle(dragon)}
+                      >
+                        <Badge className={`mb-2 bg-gradient-to-r ${RARITY_COLORS[dragon.rarity]}`}>
+                          {getRarityText(dragon.rarity)}
+                        </Badge>
+                        <img 
+                          src={dragon.image}
+                          alt={dragon.name}
+                          className="w-full h-48 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-xl font-bold text-white mb-2">{dragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[dragon.element]} text-white mb-3`}>
+                          {getElementText(dragon.element)}
+                        </Badge>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.speed}</p>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-6">
+                  {playerBattleDragon && (
+                    <Card className="p-6 bg-gradient-to-br from-blue-900/90 to-cyan-900/90 backdrop-blur-sm border-2 border-cyan-500 animate-glow">
+                      <div className="text-center">
+                        <Badge className="mb-2 bg-blue-600">Ваш дракон</Badge>
+                        <img 
+                          src={playerBattleDragon.image}
+                          alt={playerBattleDragon.name}
+                          className="w-full h-48 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-2xl font-bold text-white mb-2">{playerBattleDragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[playerBattleDragon.element]} text-white mb-3`}>
+                          {getElementText(playerBattleDragon.element)}
+                        </Badge>
+                        <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
+                          <div className="flex justify-between text-white text-sm mb-1">
+                            <span>HP</span>
+                            <span>{Math.max(0, playerBattleDragon.currentHp)} / {playerBattleDragon.hp}</span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-green-500 to-emerald-600 h-full transition-all duration-500"
+                              style={{ width: `${Math.max(0, (playerBattleDragon.currentHp / playerBattleDragon.hp) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.speed}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {enemyDragon && (
+                    <Card className="p-6 bg-gradient-to-br from-red-900/90 to-orange-900/90 backdrop-blur-sm border-2 border-red-500 animate-glow">
+                      <div className="text-center">
+                        <Badge className="mb-2 bg-red-600">Противник</Badge>
+                        <img 
+                          src={enemyDragon.image}
+                          alt={enemyDragon.name}
+                          className="w-full h-48 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-2xl font-bold text-white mb-2">{enemyDragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[enemyDragon.element]} text-white mb-3`}>
+                          {getElementText(enemyDragon.element)}
+                        </Badge>
+                        <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
+                          <div className="flex justify-between text-white text-sm mb-1">
+                            <span>HP</span>
+                            <span>{Math.max(0, enemyDragon.currentHp)} / {enemyDragon.hp}</span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-red-500 to-orange-600 h-full transition-all duration-500"
+                              style={{ width: `${Math.max(0, (enemyDragon.currentHp / enemyDragon.hp) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.speed}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+
+                <Card className="p-6 bg-gradient-to-br from-slate-800/90 to-purple-900/90 backdrop-blur-sm border-2 border-purple-500/50 max-h-64 overflow-y-auto">
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <Icon name="ScrollText" size={20} />
+                    Журнал Боя
+                  </h3>
+                  <div className="space-y-2">
+                    {battleLogs.map((log, index) => (
+                      <p 
+                        key={index}
+                        className={`text-sm ${
+                          log.type === 'win' ? 'text-amber-300 font-bold text-lg' :
+                          log.type === 'attack' ? 'text-purple-200' :
+                          'text-blue-300'
+                        }`}
+                      >
+                        {log.message}
+                      </p>
+                    ))}
+                  </div>
+                </Card>
+
+                <div className="flex gap-4 justify-center">
+                  {!isBattling && battleLogs.length === 1 && (
+                    <Button 
+                      onClick={executeBattle}
+                      className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-bold py-6 px-12 text-lg"
+                    >
+                      <Icon name="Swords" className="mr-2" size={24} />
+                      Начать Бой!
+                    </Button>
+                  )}
+                  {!isBattling && battleLogs.length > 1 && (
+                    <Button 
+                      onClick={resetBattle}
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-6 px-12 text-lg"
+                    >
+                      Новый Бой
+                    </Button>
+                  )}
+                  {isBattling && (
+                    <div className="text-center">
+                      <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-purple-500 mb-2"></div>
+                      <p className="text-purple-300 font-bold">Идёт битва...</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="arena">
+            {!selectedDragon ? (
+              <div>
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold mb-4 text-white">Арена Битв</h2>
+                  <div className="flex justify-center gap-6 mb-6">
+                    <div className="bg-gradient-to-br from-red-600/30 to-orange-600/30 backdrop-blur-sm px-6 py-3 rounded-2xl border border-red-500/50">
+                      <div className="flex items-center gap-2">
+                        <Icon name="Trophy" className="text-amber-400" size={24} />
+                        <span className="text-2xl font-bold text-white">{playerRating}</span>
+                      </div>
+                      <p className="text-xs text-red-200 mt-1">Рейтинг</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-600/30 to-emerald-600/30 backdrop-blur-sm px-6 py-3 rounded-2xl border border-green-500/50">
+                      <div className="flex items-center gap-2">
+                        <Icon name="Swords" className="text-green-400" size={24} />
+                        <span className="text-2xl font-bold text-white">{wins}W / {losses}L</span>
+                      </div>
+                      <p className="text-xs text-green-200 mt-1">Побед / Поражений</p>
+                    </div>
+                  </div>
+                  <p className="text-purple-200">Выбери дракона для битвы на арене!</p>
+                </div>
+
+                {collection.length === 0 ? (
+                  <div className="text-center py-20">
+                    <Icon name="AlertCircle" size={64} className="mx-auto mb-4 text-purple-400 opacity-50" />
+                    <p className="text-xl text-purple-300">Сначала призови дракона!</p>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {collection.map((dragon) => (
+                      <Card 
+                        key={dragon.id}
+                        className="p-4 bg-gradient-to-br from-slate-800/90 to-purple-900/90 backdrop-blur-sm border-2 border-purple-500/50 hover:border-purple-400 transition-all hover:scale-105 cursor-pointer"
+                        onClick={() => startBattle(dragon)}
+                      >
+                        <Badge className={`mb-2 bg-gradient-to-r ${RARITY_COLORS[dragon.rarity]}`}>
+                          {getRarityText(dragon.rarity)}
+                        </Badge>
+                        <img 
+                          src={dragon.image}
+                          alt={dragon.name}
+                          className="w-full h-48 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-xl font-bold text-white mb-2">{dragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[dragon.element]} text-white mb-3`}>
+                          {getElementText(dragon.element)}
+                        </Badge>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm mb-3">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{dragon.speed}</p>
+                          </div>
+                        </div>
+                        <Button className="w-full bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-400 hover:to-orange-500">
+                          В бой!
+                        </Button>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="text-center mb-4">
+                  <h2 className="text-3xl font-bold text-white mb-2">Битва на Арене!</h2>
+                  <Button 
+                    onClick={resetBattle}
+                    variant="outline"
+                    className="mb-4"
+                  >
+                    <Icon name="ArrowLeft" size={18} className="mr-2" />
+                    Назад
+                  </Button>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+                  {playerBattleDragon && (
+                    <Card className="p-6 bg-gradient-to-br from-blue-800/90 to-cyan-900/90 backdrop-blur-sm border-2 border-cyan-500/50">
+                      <div className="text-center">
+                        <Badge className="mb-2 bg-blue-600">Ваш дракон</Badge>
+                        <img 
+                          src={playerBattleDragon.image}
+                          alt={playerBattleDragon.name}
+                          className="w-full h-56 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-2xl font-bold text-white mb-2">{playerBattleDragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[playerBattleDragon.element]} text-white mb-3`}>
+                          {getElementText(playerBattleDragon.element)}
+                        </Badge>
+                        <div className="mb-4">
+                          <div className="flex justify-between text-white text-sm mb-1">
+                            <span>HP</span>
+                            <span>{Math.max(0, playerBattleDragon.currentHp)} / {playerBattleDragon.hp}</span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-4 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-green-500 to-emerald-600 h-full transition-all duration-500"
+                              style={{ width: `${Math.max(0, (playerBattleDragon.currentHp / playerBattleDragon.hp) * 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{playerBattleDragon.speed}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {enemyDragon && (
+                    <Card className="p-6 bg-gradient-to-br from-red-800/90 to-orange-900/90 backdrop-blur-sm border-2 border-red-500/50">
+                      <div className="text-center">
+                        <Badge className="mb-2 bg-red-600">Противник</Badge>
+                        <img 
+                          src={enemyDragon.image}
+                          alt={enemyDragon.name}
+                          className="w-full h-56 object-cover rounded-lg mb-3"
+                        />
+                        <h3 className="text-2xl font-bold text-white mb-2">{enemyDragon.name}</h3>
+                        <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[enemyDragon.element]} text-white mb-3`}>
+                          {getElementText(enemyDragon.element)}
+                        </Badge>
+                        <div className="mb-4">
+                          <div className="flex justify-between text-white text-sm mb-1">
+                            <span>HP</span>
+                            <span>{Math.max(0, enemyDragon.currentHp)} / {enemyDragon.hp}</span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-4 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-red-500 to-orange-600 h-full transition-all duration-500"
+                              style={{ width: `${Math.max(0, (enemyDragon.currentHp / enemyDragon.hp) * 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-white text-sm">
+                          <div className="text-center">
+                            <Icon name="Zap" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.power}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Heart" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.hp}</p>
+                          </div>
+                          <div className="text-center">
+                            <Icon name="Gauge" className="mx-auto" size={16} />
+                            <p className="font-bold">{enemyDragon.speed}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+
+                <Card className="p-6 bg-slate-800/90 backdrop-blur-sm border-2 border-purple-500/50 max-w-5xl mx-auto">
+                  <div className="text-center mb-4">
+                    <h3 className="text-xl font-bold text-white mb-4">Лог битвы</h3>
+                    {!isBattling && battleLogs.length > 0 && battleLogs[battleLogs.length - 1].type === 'info' && (
+                      <Button 
+                        onClick={executeBattle}
+                        className="bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-400 hover:to-orange-500 text-lg px-8 py-6"
+                      >
+                        <Icon name="Swords" size={24} className="mr-2" />
+                        Начать бой!
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {battleLogs.map((log, index) => (
+                      <div 
+                        key={index}
+                        className={`p-3 rounded-lg ${
+                          log.type === 'win' ? 'bg-amber-600/20 border border-amber-500/50' :
+                          log.type === 'attack' ? 'bg-slate-700/50' :
+                          'bg-purple-600/20 border border-purple-500/50'
+                        }`}
+                      >
+                        <p className="text-white">{log.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {battleLogs.length > 0 && battleLogs[battleLogs.length - 1].type === 'win' && (
+                  <div className="text-center">
+                    <Button 
+                      onClick={resetBattle}
+                      className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500 text-lg px-8 py-4"
+                    >
+                      Вернуться к выбору дракона
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
           </TabsContent>
         </Tabs>
       </div>
