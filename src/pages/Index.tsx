@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
+import DragonWorld from '@/components/DragonWorld';
 
 type DragonElement = 'fire' | 'ice' | 'shadow' | 'light' | 'earth' | 'wind';
 type DragonRarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -86,6 +87,8 @@ const Index = () => {
   const [playerBattleDragon, setPlayerBattleDragon] = useState<BattleDragon | null>(null);
   const [isBattling, setIsBattling] = useState(false);
   const [battleLogs, setBattleLogs] = useState<BattleLog[]>([]);
+  const [isInWorld, setIsInWorld] = useState(false);
+  const [worldDragon, setWorldDragon] = useState<Dragon | null>(null);
 
   const getRarityByChance = (): DragonRarity => {
     const rand = Math.random() * 100;
@@ -279,25 +282,38 @@ const Index = () => {
           </div>
         </header>
 
-        <Tabs defaultValue="summon" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-8 bg-slate-800/50 backdrop-blur-sm">
-            <TabsTrigger value="summon" className="data-[state=active]:bg-purple-600">
-              <Icon name="Sparkles" size={18} className="mr-2" />
-              Призыв
-            </TabsTrigger>
-            <TabsTrigger value="collection" className="data-[state=active]:bg-purple-600">
-              <Icon name="Library" size={18} className="mr-2" />
-              Коллекция
-            </TabsTrigger>
-            <TabsTrigger value="arena" className="data-[state=active]:bg-purple-600">
-              <Icon name="Swords" size={18} className="mr-2" />
-              Арена
-            </TabsTrigger>
-            <TabsTrigger value="shop" className="data-[state=active]:bg-purple-600">
-              <Icon name="ShoppingBag" size={18} className="mr-2" />
-              Магазин
-            </TabsTrigger>
-          </TabsList>
+        {isInWorld ? (
+          <DragonWorld 
+            selectedDragon={worldDragon}
+            onBack={() => {
+              setIsInWorld(false);
+              setWorldDragon(null);
+            }}
+          />
+        ) : (
+          <Tabs defaultValue="summon" className="w-full">
+            <TabsList className="grid w-full grid-cols-5 mb-8 bg-slate-800/50 backdrop-blur-sm">
+              <TabsTrigger value="summon" className="data-[state=active]:bg-purple-600">
+                <Icon name="Sparkles" size={18} className="mr-2" />
+                Призыв
+              </TabsTrigger>
+              <TabsTrigger value="collection" className="data-[state=active]:bg-purple-600">
+                <Icon name="Library" size={18} className="mr-2" />
+                Коллекция
+              </TabsTrigger>
+              <TabsTrigger value="arena" className="data-[state=active]:bg-purple-600">
+                <Icon name="Swords" size={18} className="mr-2" />
+                Арена
+              </TabsTrigger>
+              <TabsTrigger value="world" className="data-[state=active]:bg-purple-600">
+                <Icon name="Globe" size={18} className="mr-2" />
+                Мир
+              </TabsTrigger>
+              <TabsTrigger value="shop" className="data-[state=active]:bg-purple-600">
+                <Icon name="ShoppingBag" size={18} className="mr-2" />
+                Магазин
+              </TabsTrigger>
+            </TabsList>
 
           <TabsContent value="summon" className="space-y-8">
             <div className="text-center mb-8">
@@ -924,8 +940,51 @@ const Index = () => {
             )}
           </TabsContent>
 
+          <TabsContent value="world">
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold mb-4 text-white">Открытый Мир</h2>
+              <p className="text-purple-200">Выбери дракона для исследования мира!</p>
+            </div>
+
+            {collection.length === 0 ? (
+              <div className="text-center py-20">
+                <Icon name="AlertCircle" size={64} className="mx-auto mb-4 text-purple-400 opacity-50" />
+                <p className="text-xl text-purple-300">Сначала призови дракона!</p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {collection.map((dragon) => (
+                  <Card 
+                    key={dragon.id}
+                    className="p-4 bg-gradient-to-br from-slate-800/90 to-purple-900/90 backdrop-blur-sm border-2 border-purple-500/50 hover:border-purple-400 transition-all hover:scale-105 cursor-pointer"
+                    onClick={() => {
+                      setWorldDragon(dragon);
+                      setIsInWorld(true);
+                    }}
+                  >
+                    <Badge className={`mb-2 bg-gradient-to-r ${RARITY_COLORS[dragon.rarity]}`}>
+                      {getRarityText(dragon.rarity)}
+                    </Badge>
+                    <img 
+                      src={dragon.image}
+                      alt={dragon.name}
+                      className="w-full h-48 object-cover rounded-lg mb-3"
+                    />
+                    <h3 className="text-xl font-bold text-white mb-2">{dragon.name}</h3>
+                    <Badge className={`bg-gradient-to-r ${ELEMENT_COLORS[dragon.element]} text-white mb-3`}>
+                      {getElementText(dragon.element)}
+                    </Badge>
+                    <Button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500">
+                      <Icon name="Globe" size={18} className="mr-2" />
+                      Исследовать мир
+                    </Button>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </div>
   );
